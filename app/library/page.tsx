@@ -18,7 +18,8 @@ export default function LibraryPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [settings, setSettingsState] = useState(DEFAULT_SETTINGS);
   const [justDeleted, setJustDeleted] = useState<string | null>(null);
-  const [playingId, setPlayingId]     = useState<string | null>(null); // id or "tv-i-entryId"
+  const [playingId, setPlayingId]     = useState<string | null>(null);
+  const [wordbookFilter, setWordbookFilter] = useState<string>("All");
 
   useEffect(() => {
     seedDemoData(); // fire-and-forget
@@ -67,15 +68,18 @@ export default function LibraryPage() {
     });
   };
 
+  const wordbooks = ["All", ...Array.from(new Set(entries.map(e => e.wordbook).filter(Boolean))) as string[]];
+
   const filtered = entries.filter((e) => {
     const matchSearch =
       e.content.toLowerCase().includes(search.toLowerCase()) ||
       e.definition_en.toLowerCase().includes(search.toLowerCase());
-    if (filter === "All")       return matchSearch;
-    if (filter === "Words")     return e.type === "word"     && matchSearch;
-    if (filter === "Phrases")   return e.type === "phrase"   && matchSearch;
-    if (filter === "Sentences") return e.type === "sentence" && matchSearch;
-    return matchSearch;
+    const matchWordbook = wordbookFilter === "All" || e.wordbook === wordbookFilter;
+    if (filter === "All")       return matchSearch && matchWordbook;
+    if (filter === "Words")     return e.type === "word"     && matchSearch && matchWordbook;
+    if (filter === "Phrases")   return e.type === "phrase"   && matchSearch && matchWordbook;
+    if (filter === "Sentences") return e.type === "sentence" && matchSearch && matchWordbook;
+    return matchSearch && matchWordbook;
   });
 
   const badgeColor: Record<string, string> = {
@@ -146,7 +150,27 @@ export default function LibraryPage() {
           </div>
         </div>
 
-        {/* Filter Pills */}
+        {/* Wordbook Filter */}
+        {wordbooks.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto hide-scrollbar">
+            {wordbooks.map((wb) => (
+              <button
+                key={wb}
+                onClick={() => setWordbookFilter(wb)}
+                className={`px-4 py-1.5 rounded-full text-xs whitespace-nowrap transition-all font-semibold flex items-center gap-1.5 ${
+                  wordbookFilter === wb
+                    ? "bg-amber-500/30 text-amber-300 border border-amber-500/40"
+                    : "glass-card text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {wb !== "All" && <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>menu_book</span>}
+                {wb}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Type Filter Pills */}
         <div className="flex gap-3 overflow-x-auto hide-scrollbar">
           {(["All", "Words", "Phrases", "Sentences"] as FilterType[]).map((f) => (
             <button
@@ -188,6 +212,12 @@ export default function LibraryPage() {
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase ${badgeColor[entry.type]}`}>
                       {entry.type}
                     </span>
+                    {entry.wordbook && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                        <span className="material-symbols-outlined" style={{ fontSize: '10px', fontVariationSettings: "'FILL' 1" }}>menu_book</span>
+                        {entry.wordbook}
+                      </span>
+                    )}
                     <h2 className="text-xl font-bold text-on-surface font-outfit">{entry.content}</h2>
                     {entry.pronunciation && (
                       <span className="text-xs text-outline font-mono">{entry.pronunciation}</span>
@@ -261,9 +291,9 @@ export default function LibraryPage() {
                           const tvId = `tv-${i}-${entry.id}`;
                           return (
                           <div key={i} className="glass-card rounded-xl p-3 flex items-start gap-3">
-                            <button
+                          <button
                               onClick={() => handleSpeakText(tv.line, tvId)}
-                              className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all mt-0.5 ${
+                              className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all mt-0.5 active:scale-90 ${
                                 playingId === tvId
                                   ? "bg-amber-500/40 scale-90"
                                   : "bg-amber-500/20 hover:bg-amber-500/40"

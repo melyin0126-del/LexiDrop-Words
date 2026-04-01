@@ -408,7 +408,7 @@ export default function ReviewPage() {
                               const lang = ACCENT_MAP[settings.accent] ?? "en-US";
                               speak(tv.line, { lang, mixVoices: true });
                             }}
-                            className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 hover:bg-amber-500/40 transition-colors mt-0.5"
+                            className="w-11 h-11 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 hover:bg-amber-500/40 active:scale-90 transition-colors mt-0.5"
                           >
                             <span className="material-symbols-outlined text-amber-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
                           </button>

@@ -20,58 +20,76 @@ export default function TextSelectPopover() {
   const [status,    setStatus]    = useState<"idle" | "loading" | "done" | "error">("idle");
   const [savedWord, setSavedWord] = useState("");
   const popRef   = useRef<HTMLDivElement>(null);
-  const busyRef  = useRef(false);   // true while saving — block any close
-  const popupRef = useRef(popover); // keep in sync for event handlers
-  popupRef.current = popover;
+  const busyRef  = useRef(false);
 
-  const openPopover = useCallback((e: MouseEvent) => {
-    // Ignore if click target is inside our popover
-    if (popRef.current?.contains(e.target as Node)) return;
-    // Ignore if currently saving
+  // ── Core: read selection and position popover ──────────────────────────────
+  const tryShowPopover = useCallback((clientX?: number, clientY?: number) => {
     if (busyRef.current) return;
 
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) {
-      setPopover(null);
-      return;
-    }
+    // Small delay so the selection is committed (important on mobile)
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setPopover(null);
+        return;
+      }
 
-    const text = sel.toString().trim();
-    if (!text || text.length < 2 || text.length > 300) {
-      setPopover(null);
-      return;
-    }
+      const text = sel.toString().trim();
+      if (!text || text.length < 2 || text.length > 300) {
+        setPopover(null);
+        return;
+      }
 
-    const range = sel.getRangeAt(0);
-    const rect  = range.getBoundingClientRect();
+      // Use the bounding rect of the selection range for pin position
+      const range = sel.getRangeAt(0);
+      const rect  = range.getBoundingClientRect();
 
-    setPopover({
-      text,
-      x: rect.left + rect.width / 2 + window.scrollX,
-      y: rect.top  + window.scrollY - 12,
-      type: detectType(text),
-    });
-    setStatus("idle");
+      // Center above selection — use viewport coords (position: fixed)
+      const x = rect.left + rect.width / 2;
+      const y = rect.top;
+
+      setPopover({ text, x, y, type: detectType(text) });
+      setStatus("idle");
+    }, 50);
   }, []);
 
-  // Close on click outside (only when not saving)
-  const handleMouseDown = useCallback((e: MouseEvent) => {
+  // ── mouseup (desktop) ──────────────────────────────────────────────────────
+  const onMouseUp = useCallback((e: MouseEvent) => {
+    if (popRef.current?.contains(e.target as Node)) return;
+    tryShowPopover(e.clientX, e.clientY);
+  }, [tryShowPopover]);
+
+  // ── touchend (mobile) ──────────────────────────────────────────────────────
+  const onTouchEnd = useCallback((e: TouchEvent) => {
+    if (popRef.current?.contains(e.target as Node)) return;
+    const touch = e.changedTouches[0];
+    tryShowPopover(touch?.clientX, touch?.clientY);
+  }, [tryShowPopover]);
+
+  // ── Close on outside click/touch ───────────────────────────────────────────
+  const onOutsideDown = useCallback((e: MouseEvent | TouchEvent) => {
     if (busyRef.current) return;
-    if (popRef.current && !popRef.current.contains(e.target as Node)) {
+    const target = (e as MouseEvent).target ?? (e as TouchEvent).target;
+    if (popRef.current && !popRef.current.contains(target as Node)) {
       setPopover(null);
       setStatus("idle");
     }
   }, []);
 
   useEffect(() => {
-    document.addEventListener("mouseup",    openPopover as EventListener);
-    document.addEventListener("mousedown",  handleMouseDown as EventListener);
+    document.addEventListener("mouseup",    onMouseUp   as EventListener);
+    document.addEventListener("touchend",   onTouchEnd  as EventListener, { passive: true });
+    document.addEventListener("mousedown",  onOutsideDown as EventListener);
+    document.addEventListener("touchstart", onOutsideDown as EventListener, { passive: true });
     return () => {
-      document.removeEventListener("mouseup",   openPopover as EventListener);
-      document.removeEventListener("mousedown", handleMouseDown as EventListener);
+      document.removeEventListener("mouseup",    onMouseUp   as EventListener);
+      document.removeEventListener("touchend",   onTouchEnd  as EventListener);
+      document.removeEventListener("mousedown",  onOutsideDown as EventListener);
+      document.removeEventListener("touchstart", onOutsideDown as EventListener);
     };
-  }, [openPopover, handleMouseDown]);
+  }, [onMouseUp, onTouchEnd, onOutsideDown]);
 
+  // ── Save word ──────────────────────────────────────────────────────────────
   const handleAdd = async () => {
     if (!popover || status === "loading" || status === "done") return;
 
@@ -83,14 +101,14 @@ export default function TextSelectPopover() {
 
     busyRef.current = true;
     setStatus("loading");
-    window.getSelection()?.removeAllRanges(); // clear selection immediately
+    window.getSelection()?.removeAllRanges();
 
     try {
       const { text, type } = popover;
 
       if (type === "sentence") {
         const analysis = await analyzeSentence(text);
-        addEntry({
+        await addEntry({
           type: "sentence",
           content: text,
           definition_en: analysis.explanation,
@@ -108,7 +126,7 @@ export default function TextSelectPopover() {
           type === "phrase" ? getNativeAlternatives(text, "phrase") : Promise.resolve([]),
           getTVExamples(text, type),
         ]);
-        addEntry({
+        await addEntry({
           type,
           content: text,
           definition_en: def.definition_en,
@@ -145,43 +163,55 @@ export default function TextSelectPopover() {
     sentence: "text-teal-400 bg-teal-500/20",
   }[popover.type];
 
-  const typeEmoji = { word: "🔤", phrase: "💬", sentence: "📝" }[popover.type];
+  const typeIcon = { word: "translate", phrase: "chat_bubble", sentence: "edit_note" }[popover.type];
+
+  // Clamp X so popover doesn't go off-screen (important on narrow mobile)
+  const POPOVER_W = 280;
+  const safeX = Math.min(
+    Math.max(popover.x, POPOVER_W / 2 + 8),
+    (typeof window !== "undefined" ? window.innerWidth : 600) - POPOVER_W / 2 - 8
+  );
 
   return (
     <div
       ref={popRef}
       style={{
-        position: "absolute",
-        left: `${popover.x}px`,
+        position: "fixed",          // fixed = viewport coords, works on mobile
+        left: `${safeX}px`,
         top:  `${popover.y}px`,
-        transform: "translate(-50%, -100%)",
+        transform: "translate(-50%, calc(-100% - 10px))",
         zIndex: 9999,
+        touchAction: "none",        // prevent scroll interfering with popover
       }}
     >
       <div className="flex flex-col items-center drop-shadow-2xl">
         {/* Bubble */}
-        <div className="bg-[#1c1c28] border border-white/10 rounded-2xl px-3 py-2 flex items-center gap-2 max-w-[320px]">
+        <div className="bg-[#1c1c28] border border-white/10 rounded-2xl px-3 py-2 flex items-center gap-2"
+          style={{ maxWidth: `${POPOVER_W}px` }}>
+
           {/* Type badge */}
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${typeColor}`}>
-            {typeEmoji} {popover.type}
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 flex items-center gap-1 ${typeColor}`}>
+            <span className="material-symbols-outlined" style={{fontSize:'10px', fontVariationSettings:"'FILL' 1"}}>{typeIcon}</span>
+            {popover.type}
           </span>
 
           {/* Selected text preview */}
-          <span className="text-white/80 text-xs truncate max-w-[130px] shrink">
-            {popover.text.length > 45 ? popover.text.slice(0, 45) + "…" : popover.text}
+          <span className="text-white/80 text-xs truncate shrink min-w-0">
+            {popover.text.length > 40 ? popover.text.slice(0, 40) + "..." : popover.text}
           </span>
 
-          {/* Add button */}
+          {/* Add button — large enough for touch (min 44px height) */}
           <button
-            onPointerDown={e => e.stopPropagation()} // prevent mousedown close handler
+            onPointerDown={e => e.stopPropagation()}
             onClick={handleAdd}
             disabled={status === "loading" || status === "done"}
-            className={`shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 select-none ${
+            className={`shrink-0 flex items-center gap-1 px-3 rounded-xl text-xs font-bold transition-all active:scale-95 select-none ${
               status === "done"    ? "bg-emerald-500/20 text-emerald-400 cursor-default" :
               status === "error"   ? "bg-red-500/20 text-red-400" :
               status === "loading" ? "bg-white/5 text-outline cursor-wait" :
               "bg-indigo-500 hover:bg-indigo-400 text-white cursor-pointer"
             }`}
+            style={{ minHeight: "44px" }}
           >
             {status === "loading" && <span className="material-symbols-outlined text-xs animate-spin">sync</span>}
             {status === "done"    && <span className="material-symbols-outlined text-xs">check_circle</span>}
@@ -200,7 +230,7 @@ export default function TextSelectPopover() {
         <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#1c1c28]" />
       </div>
 
-      {/* Confirmation */}
+      {/* Confirmation toast */}
       {status === "done" && (
         <div className="mt-1 text-center text-[10px] text-emerald-400 animate-pulse whitespace-nowrap">
           ✓ &ldquo;{savedWord}&rdquo; added to library

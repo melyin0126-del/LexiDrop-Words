@@ -39,6 +39,7 @@ export interface VocabEntry {
   situations?: SituationExample[];
   sentence_explanation?: string;
   tv_examples?: TVExample[];
+  wordbook?: string;         // e.g. "DK10000词", "IELTS高频词"
   // SM-2 fields
   next_review_at: number;   // timestamp ms
   interval: number;
@@ -119,6 +120,7 @@ function rowToEntry(row: any): VocabEntry {
     situations:           row.situations ?? undefined,
     sentence_explanation: row.sentence_explanation ?? undefined,
     tv_examples:          row.tv_examples ?? undefined,
+    wordbook:             row.wordbook ?? undefined,
     next_review_at:       Number(row.next_review_at),
     interval:             Number(row.interval),
     ease_factor:          Number(row.ease_factor),
@@ -232,6 +234,7 @@ export async function addEntry(
       situations:           newEntry.situations ?? null,
       sentence_explanation: newEntry.sentence_explanation ?? null,
       tv_examples:          newEntry.tv_examples ?? null,
+      wordbook:             newEntry.wordbook ?? null,
       next_review_at:       newEntry.next_review_at,
       interval:             newEntry.interval,
       ease_factor:          newEntry.ease_factor,
