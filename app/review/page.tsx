@@ -402,25 +402,25 @@ export default function ReviewPage() {
                         In American TV
                       </p>
                       {current.entry.tv_examples.map((tv, i) => (
-                        <div key={i} className="glass-card rounded-xl p-3 flex items-start gap-3">
-                          <button
-                            onClick={() => {
-                              const lang = ACCENT_MAP[settings.accent] ?? "en-US";
-                              speak(tv.line, { lang, mixVoices: true });
-                            }}
-                            className="w-11 h-11 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 hover:bg-amber-500/40 active:scale-90 transition-colors mt-0.5"
-                          >
-                            <span className="material-symbols-outlined text-amber-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
-                          </button>
-                          <div className="min-w-0">
-                            <p className="text-on-surface text-sm italic leading-snug">&ldquo;{tv.line}&rdquo;</p>
-                            <p className="text-outline text-[10px] mt-1">
-                              {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
-                              {tv.character && " · "}
-                              <span>{tv.show}</span>
-                              {tv.context && <span className="ml-1">· {tv.context}</span>}
-                            </p>
+                        <div key={i} className="glass-card rounded-xl p-3 space-y-1">
+                          <div className="flex items-end gap-2">
+                            <p className="text-on-surface text-sm italic leading-snug flex-1">&ldquo;{tv.line}&rdquo;</p>
+                            <button
+                              onClick={() => {
+                                const lang = ACCENT_MAP[settings.accent] ?? "en-US";
+                                speak(tv.line, { lang, mixVoices: true });
+                              }}
+                              className="shrink-0 w-9 h-9 rounded-full bg-amber-500/20 flex items-center justify-center hover:bg-amber-500/40 active:scale-90 transition-colors mb-0.5"
+                            >
+                              <span className="material-symbols-outlined text-amber-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>play_arrow</span>
+                            </button>
                           </div>
+                          <p className="text-outline text-[10px]">
+                            {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
+                            {tv.character && " · "}
+                            <span>{tv.show}</span>
+                            {tv.context && <span className="ml-1">· {tv.context}</span>}
+                          </p>
                         </div>
                       ))}
                     </div>

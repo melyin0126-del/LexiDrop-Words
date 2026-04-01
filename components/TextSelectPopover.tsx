@@ -13,7 +13,7 @@ function detectType(text: string): DetectedType {
   return "phrase";
 }
 
-interface PopoverState { text: string; x: number; y: number; type: DetectedType; }
+interface PopoverState { text: string; x: number; y: number; type: DetectedType; isMobile: boolean; }
 
 export default function TextSelectPopover() {
   const [popover,   setPopover]   = useState<PopoverState | null>(null);
@@ -23,47 +23,33 @@ export default function TextSelectPopover() {
   const busyRef  = useRef(false);
 
   // ── Core: read selection and position popover ──────────────────────────────
-  const tryShowPopover = useCallback((clientX?: number, clientY?: number) => {
+  const tryShowPopover = useCallback((clientX?: number, clientY?: number, isMobile = false) => {
     if (busyRef.current) return;
-
-    // Small delay so the selection is committed (important on mobile)
     setTimeout(() => {
       const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-        setPopover(null);
-        return;
-      }
-
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { setPopover(null); return; }
       const text = sel.toString().trim();
-      if (!text || text.length < 2 || text.length > 300) {
-        setPopover(null);
-        return;
-      }
-
-      // Use the bounding rect of the selection range for pin position
+      if (!text || text.length < 2 || text.length > 300) { setPopover(null); return; }
       const range = sel.getRangeAt(0);
       const rect  = range.getBoundingClientRect();
-
-      // Center above selection — use viewport coords (position: fixed)
       const x = rect.left + rect.width / 2;
       const y = rect.top;
-
-      setPopover({ text, x, y, type: detectType(text) });
+      setPopover({ text, x, y, type: detectType(text), isMobile });
       setStatus("idle");
-    }, 50);
+    }, isMobile ? 400 : 50);
   }, []);
 
   // ── mouseup (desktop) ──────────────────────────────────────────────────────
   const onMouseUp = useCallback((e: MouseEvent) => {
     if (popRef.current?.contains(e.target as Node)) return;
-    tryShowPopover(e.clientX, e.clientY);
+    tryShowPopover(e.clientX, e.clientY, false);
   }, [tryShowPopover]);
 
   // ── touchend (mobile) ──────────────────────────────────────────────────────
   const onTouchEnd = useCallback((e: TouchEvent) => {
     if (popRef.current?.contains(e.target as Node)) return;
     const touch = e.changedTouches[0];
-    tryShowPopover(touch?.clientX, touch?.clientY);
+    tryShowPopover(touch?.clientX, touch?.clientY, true); // isMobile = true
   }, [tryShowPopover]);
 
   // ── Close on outside click/touch ───────────────────────────────────────────
@@ -157,15 +143,60 @@ export default function TextSelectPopover() {
 
   if (!popover) return null;
 
-  const typeColor = {
-    word:     "text-indigo-400 bg-indigo-500/20",
-    phrase:   "text-purple-400 bg-purple-500/20",
-    sentence: "text-teal-400 bg-teal-500/20",
-  }[popover.type];
+  const typeColor = { word: "text-indigo-400 bg-indigo-500/20", phrase: "text-purple-400 bg-purple-500/20", sentence: "text-teal-400 bg-teal-500/20" }[popover.type];
+  const typeIcon  = { word: "translate", phrase: "chat_bubble", sentence: "edit_note" }[popover.type];
 
-  const typeIcon = { word: "translate", phrase: "chat_bubble", sentence: "edit_note" }[popover.type];
+  // ── Mobile: bottom sheet (avoids iOS native Copy/Translate menu) ───────────
+  if (popover.isMobile) {
+    return (
+      <div
+        ref={popRef}
+        style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999 }}
+        className="bg-[#1c1c28] border-t border-white/10 px-4 py-4 flex items-center gap-3 shadow-2xl"
+      >
+        {/* Type badge */}
+        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 flex items-center gap-1 ${typeColor}`}>
+          <span className="material-symbols-outlined" style={{fontSize:'11px',fontVariationSettings:"'FILL' 1"}}>{typeIcon}</span>
+          {popover.type}
+        </span>
 
-  // Clamp X so popover doesn't go off-screen (important on narrow mobile)
+        {/* Selected text */}
+        <span className="text-white/80 text-sm font-medium truncate flex-1 min-w-0">
+          {popover.text.length > 35 ? popover.text.slice(0, 35) + "..." : popover.text}
+        </span>
+
+        {/* Big Add button — thumb-friendly */}
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={handleAdd}
+          disabled={status === "loading" || status === "done"}
+          className={`shrink-0 flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95 ${
+            status === "done"    ? "bg-emerald-500/20 text-emerald-400" :
+            status === "error"   ? "bg-red-500/20 text-red-400" :
+            status === "loading" ? "bg-white/5 text-outline" :
+            "bg-indigo-500 text-white"
+          }`}
+        >
+          {status === "loading" && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+          {status === "done"    && <span className="material-symbols-outlined text-sm">check_circle</span>}
+          {status === "error"   && <span className="material-symbols-outlined text-sm">error</span>}
+          {status === "idle"    && <span className="material-symbols-outlined text-sm">add</span>}
+          <span>{status === "loading" ? "Saving..." : status === "done" ? "Saved!" : status === "error" ? "Retry" : "Add"}</span>
+        </button>
+
+        {/* Dismiss */}
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={() => { setPopover(null); setStatus("idle"); }}
+          className="shrink-0 w-9 h-9 rounded-full bg-white/5 flex items-center justify-center text-outline"
+        >
+          <span className="material-symbols-outlined text-sm">close</span>
+        </button>
+      </div>
+    );
+  }
+
+  // ── Desktop: floating bubble above selection ───────────────────────────────
   const POPOVER_W = 280;
   const safeX = Math.min(
     Math.max(popover.x, POPOVER_W / 2 + 8),
@@ -173,74 +204,28 @@ export default function TextSelectPopover() {
   );
 
   return (
-    <div
-      ref={popRef}
-      style={{
-        position: "fixed",          // fixed = viewport coords, works on mobile
-        left: `${safeX}px`,
-        top:  `${popover.y}px`,
-        transform: "translate(-50%, calc(-100% - 10px))",
-        zIndex: 9999,
-        touchAction: "none",        // prevent scroll interfering with popover
-      }}
-    >
+    <div ref={popRef} style={{ position: "fixed", left: `${safeX}px`, top: `${popover.y}px`, transform: "translate(-50%, calc(-100% - 10px))", zIndex: 9999, touchAction: "none" }}>
       <div className="flex flex-col items-center drop-shadow-2xl">
-        {/* Bubble */}
-        <div className="bg-[#1c1c28] border border-white/10 rounded-2xl px-3 py-2 flex items-center gap-2"
-          style={{ maxWidth: `${POPOVER_W}px` }}>
-
-          {/* Type badge */}
+        <div className="bg-[#1c1c28] border border-white/10 rounded-2xl px-3 py-2 flex items-center gap-2" style={{ maxWidth: `${POPOVER_W}px` }}>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 flex items-center gap-1 ${typeColor}`}>
-            <span className="material-symbols-outlined" style={{fontSize:'10px', fontVariationSettings:"'FILL' 1"}}>{typeIcon}</span>
+            <span className="material-symbols-outlined" style={{fontSize:'10px',fontVariationSettings:"'FILL' 1"}}>{typeIcon}</span>
             {popover.type}
           </span>
-
-          {/* Selected text preview */}
           <span className="text-white/80 text-xs truncate shrink min-w-0">
             {popover.text.length > 40 ? popover.text.slice(0, 40) + "..." : popover.text}
           </span>
-
-          {/* Add button — large enough for touch (min 44px height) */}
-          <button
-            onPointerDown={e => e.stopPropagation()}
-            onClick={handleAdd}
-            disabled={status === "loading" || status === "done"}
-            className={`shrink-0 flex items-center gap-1 px-3 rounded-xl text-xs font-bold transition-all active:scale-95 select-none ${
-              status === "done"    ? "bg-emerald-500/20 text-emerald-400 cursor-default" :
-              status === "error"   ? "bg-red-500/20 text-red-400" :
-              status === "loading" ? "bg-white/5 text-outline cursor-wait" :
-              "bg-indigo-500 hover:bg-indigo-400 text-white cursor-pointer"
-            }`}
-            style={{ minHeight: "44px" }}
-          >
+          <button onPointerDown={e => e.stopPropagation()} onClick={handleAdd} disabled={status === "loading" || status === "done"} className={`shrink-0 flex items-center gap-1 px-3 rounded-xl text-xs font-bold transition-all active:scale-95 select-none ${ status === "done" ? "bg-emerald-500/20 text-emerald-400 cursor-default" : status === "error" ? "bg-red-500/20 text-red-400" : status === "loading" ? "bg-white/5 text-outline cursor-wait" : "bg-indigo-500 hover:bg-indigo-400 text-white cursor-pointer" }`} style={{ minHeight: "44px" }}>
             {status === "loading" && <span className="material-symbols-outlined text-xs animate-spin">sync</span>}
             {status === "done"    && <span className="material-symbols-outlined text-xs">check_circle</span>}
             {status === "error"   && <span className="material-symbols-outlined text-xs">error</span>}
             {status === "idle"    && <span className="material-symbols-outlined text-xs">add</span>}
-            <span>
-              {status === "loading" ? "Saving…" :
-               status === "done"    ? "Saved!" :
-               status === "error"   ? "Retry?" :
-               "Add"}
-            </span>
+            <span>{status === "loading" ? "Saving..." : status === "done" ? "Saved!" : status === "error" ? "Retry?" : "Add"}</span>
           </button>
         </div>
-
-        {/* Arrow */}
         <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#1c1c28]" />
       </div>
-
-      {/* Confirmation toast */}
-      {status === "done" && (
-        <div className="mt-1 text-center text-[10px] text-emerald-400 animate-pulse whitespace-nowrap">
-          ✓ &ldquo;{savedWord}&rdquo; added to library
-        </div>
-      )}
-      {status === "error" && (
-        <div className="mt-1 text-center text-[10px] text-red-400">
-          Failed — check Gemini key in Settings
-        </div>
-      )}
+      {status === "done" && <div className="mt-1 text-center text-[10px] text-emerald-400 animate-pulse whitespace-nowrap">Added to library</div>}
+      {status === "error" && <div className="mt-1 text-center text-[10px] text-red-400">Failed - check Gemini key in Settings</div>}
     </div>
   );
 }

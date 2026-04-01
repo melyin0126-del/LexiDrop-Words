@@ -290,34 +290,30 @@ export default function LibraryPage() {
                         {entry.tv_examples.map((tv, i) => {
                           const tvId = `tv-${i}-${entry.id}`;
                           return (
-                          <div key={i} className="glass-card rounded-xl p-3 flex items-start gap-3">
-                          <button
-                              onClick={() => handleSpeakText(tv.line, tvId)}
-                              className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all mt-0.5 active:scale-90 ${
-                                playingId === tvId
-                                  ? "bg-amber-500/40 scale-90"
-                                  : "bg-amber-500/20 hover:bg-amber-500/40"
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-amber-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
-                                {playingId === tvId ? "graphic_eq" : "play_arrow"}
-                              </span>
-                            </button>
-                            <div>
-                              <p className="text-on-surface text-sm italic">&ldquo;{tv.line}&rdquo;</p>
-                              <p className="text-outline text-[10px] mt-1">
-                                {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
-                                {tv.character && " · "}
-                                <span>{tv.show}</span>
-                                {tv.context && <span className="ml-1">· {tv.context}</span>}
-                              </p>
-                              {playingId === tvId && (
-                                <p className="text-amber-400/50 text-[10px] mt-0.5 animate-pulse">Generating audio...</p>
-                              )}
+                          <div key={i} className="glass-card rounded-xl p-3 space-y-1">
+                            <div className="flex items-end gap-2">
+                              <p className="text-on-surface text-sm italic flex-1">&ldquo;{tv.line}&rdquo;</p>
+                              <button
+                                onClick={() => handleSpeakText(tv.line, tvId)}
+                                className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 mb-0.5 ${
+                                  playingId === tvId
+                                    ? "bg-amber-500/40"
+                                    : "bg-amber-500/20 hover:bg-amber-500/40"
+                                }`}
+                              >
+                                <span className="material-symbols-outlined text-amber-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                  {playingId === tvId ? "graphic_eq" : "play_arrow"}
+                                </span>
+                              </button>
                             </div>
+                            <p className="text-outline text-[10px]">
+                              {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
+                              {tv.character && " · "}
+                              <span>{tv.show}</span>
+                              {tv.context && <span className="ml-1">· {tv.context}</span>}
+                            </p>
                           </div>
-                        )})}
-                      </div>
+                        )})}                      </div>
                     )}
                   </div>
                 )}
