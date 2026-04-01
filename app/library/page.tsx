@@ -276,9 +276,26 @@ export default function LibraryPage() {
                   <div className="space-y-4 mt-1">
                     {entry.examples.length > 0 && (
                       <div className="pl-4 border-l-2 border-indigo-500/20 space-y-2">
-                        {entry.examples.map((ex, i) => (
-                          <p key={i} className="text-on-surface-variant text-sm italic">&ldquo;{ex}&rdquo;</p>
-                        ))}
+                        {entry.examples.map((ex, i) => {
+                          const exId = `ex-${i}-${entry.id}`;
+                          return (
+                            <div key={i} className="flex items-center gap-2 group">
+                              <p className="text-on-surface-variant text-sm italic flex-1">&ldquo;{ex}&rdquo;</p>
+                              <button
+                                onClick={() => handleSpeakText(ex, exId)}
+                                className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 active:scale-90 ${
+                                  playingId === exId
+                                    ? "opacity-100 bg-indigo-500/40"
+                                    : "bg-indigo-500/20 hover:bg-indigo-500/40"
+                                }`}
+                              >
+                                <span className="material-symbols-outlined text-indigo-400" style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
+                                  {playingId === exId ? "graphic_eq" : "play_arrow"}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     {entry.tv_examples && entry.tv_examples.length > 0 && (

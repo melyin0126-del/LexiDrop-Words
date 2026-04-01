@@ -260,16 +260,23 @@ export async function analyzeImageContent(imageBlob: Blob): Promise<ImageAnalysi
   const mimeType = imageBlob.type || "image/png";
 
   const prompt = `
-You are a vocabulary extraction assistant. Look at this image and extract English text.
+You are a vocabulary extraction assistant helping a Chinese speaker learn English.
+
+The image may contain MIXED Chinese and English text. Your job:
+1. Identify ALL English words/phrases/sentences in the image — they may be spread across multiple lines or mixed with Chinese characters.
+2. Reconstruct the complete, coherent English text by joining fragmented English segments in reading order. Do NOT omit any English words even if they appear next to Chinese text.
+3. Ignore Chinese characters entirely — only extract English content.
 
 Return a JSON object with:
-- extractedText: all visible English text
+- extractedText: the complete reconstructed English text (all English segments joined)
 - type: "word" | "phrase" | "sentence" | "bulk"
-  - word = 1 word
+  - word = 1 English word
   - phrase = 2-6 words, not a full sentence
-  - sentence = a full sentence or clause
-  - bulk = multiple sentences/paragraphs/list of items
+  - sentence = a full English sentence or clause (even if split across lines by Chinese text)
+  - bulk = multiple distinct English sentences/items
 - items: ONLY if type is "bulk" — array of { content, type ("word"|"phrase"|"sentence"), reason (max 8 words) }
+
+CRITICAL: If the image has Chinese text with embedded English fragments, reconstruct the full English sentence from all fragments. For example if you see "这是 'But I feel like if I use the" on one line and "agent mode, it can automatically access my API key.' 的意思" on another, extractedText should be: "But I feel like if I use the agent mode, it can automatically access my API key."
 
 Respond ONLY with valid JSON. No markdown.
 `.trim();

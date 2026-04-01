@@ -64,6 +64,20 @@ export default function AddPage() {
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const dropRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Handle file input (mobile camera / gallery) ──────────────────────────
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith("image/")) {
+      processImage(file);
+    } else {
+      file.text().then(processTextContent);
+    }
+    // Reset so same file can be re-selected
+    e.target.value = "";
+  };
 
   useEffect(() => {
     seedDemoData(); // fire-and-forget async
@@ -81,8 +95,8 @@ export default function AddPage() {
     setInputState("idle");
   };
 
-  // ── Process image (drag or paste) ───────────────────────────────────────
-  const processImage = useCallback((blob: Blob) => {
+  // ── Process image: set preview then auto-analyze ────────────────────────
+  const processImage = useCallback(async (blob: Blob) => {
     const url = URL.createObjectURL(blob);
     setPastedImage(url);
     setPastedImageBlob(blob);
@@ -92,6 +106,31 @@ export default function AddPage() {
     setSentenceAnalysis(null);
     setExtractedText(null);
     setInputState("preview");
+
+    // Auto-analyze immediately — no need to click a button
+    const key = getSettings().gemini_key;
+    if (!key) return; // will show the Settings reminder
+
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeImageContent(blob);
+      const extracted = result.extractedText?.trim();
+      if (!extracted) return;
+
+      if (result.type === "bulk" && result.items?.length) {
+        // Multiple vocab items → selectable list
+        setCandidates(result.items.map(i => ({ ...i, selected: true })));
+      } else {
+        // Single word / phrase / sentence → show as one selectable candidate
+        const detectedT = (result.type === "bulk" ? "sentence" : result.type) as AutoType;
+        setCandidates([{ content: extracted, type: detectedT, reason: "Extracted from image", selected: true }]);
+        setTextInput(extracted);
+      }
+    } catch (e) {
+      alert(`Image analysis failed: ${e}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
   }, []);
 
   // ── Process text file ────────────────────────────────────────────────────
@@ -173,38 +212,6 @@ export default function AddPage() {
     setSentenceAnalysis(null);
 
     try {
-      // ── IMAGE: use Gemini Vision OCR ──
-      if (hasImage && pastedImageBlob) {
-        const result = await analyzeImageContent(pastedImageBlob);
-        if (result.type === "bulk" && result.items?.length) {
-          setCandidates(result.items.map(i => ({ ...i, selected: true })));
-          setInputState("preview");
-        } else if (result.type === "sentence") {
-          const analysis = await analyzeSentence(result.extractedText);
-          setTextInput(result.extractedText);
-          setSentenceAnalysis(analysis);
-          setInputState("preview");
-        } else {
-          // word or phrase
-          const t = result.type as "word" | "phrase";
-          const [def, alts, tvEx] = await Promise.all([
-            getDefinition(result.extractedText, t),
-            t === "phrase" ? getNativeAlternatives(result.extractedText, "phrase") : Promise.resolve([]),
-            getTVExamples(result.extractedText, t),
-          ]);
-          await addEntry({
-            type: t, content: result.extractedText,
-            definition_en: def.definition_en, definition_zh: def.definition_zh,
-            pronunciation: def.pronunciation, examples: def.examples,
-            source_type: "screenshot", tags: [],
-            native_alternatives: alts.length ? alts : undefined,
-            tv_examples: tvEx.length ? tvEx : undefined,
-          });
-          setSavedCount(c => c + 1);
-          reset();
-        }
-        return;
-      }
 
       // ── TEXT: determine single vs bulk ──
       const wordCount = text.split(/\s+/).filter(Boolean).length;
@@ -277,23 +284,45 @@ export default function AddPage() {
     setIsAnalyzing(true);
     let saved = 0;
     const key = settings.gemini_key || getSettings().gemini_key;
+    const sourceType = pastedImage ? "screenshot" : extractedText ? "paste" : "manual";
     for (const c of selected) {
       try {
-        const def = key ? await getDefinition(c.content, c.type) : { definition_en: c.reason, definition_zh: "", examples: [] };
-        const alts = key && c.type !== "word" ? await getNativeAlternatives(c.content, c.type as "phrase" | "sentence") : [];
-        await addEntry({
-          type: c.type, content: c.content,
-          definition_en: def.definition_en, definition_zh: def.definition_zh,
-          examples: def.examples,
-          source_type: extractedText ? "paste" : "manual",
-          tags: [],
-          native_alternatives: alts.length ? alts : undefined,
-        });
+        if (key && c.type === "sentence") {
+          // Full deep analysis for sentences
+          const analysis = await analyzeSentence(c.content);
+          const tvEx = await getTVExamples(c.content, "sentence");
+          await addEntry({
+            type: "sentence", content: c.content,
+            definition_en: analysis.explanation,
+            definition_zh: analysis.definition_zh,
+            examples: analysis.situations.flatMap(s => s.examples).slice(0, 3),
+            source_type: sourceType, tags: [],
+            native_alternatives: analysis.native_alternatives,
+            situations: analysis.situations,
+            sentence_explanation: analysis.explanation,
+            tv_examples: tvEx.length ? tvEx : undefined,
+          });
+        } else {
+          const def = key ? await getDefinition(c.content, c.type) : { definition_en: c.reason, definition_zh: "", examples: [] };
+          const alts = key && c.type === "phrase" ? await getNativeAlternatives(c.content, "phrase") : [];
+          const tvEx = key ? await getTVExamples(c.content, c.type) : [];
+          await addEntry({
+            type: c.type, content: c.content,
+            definition_en: def.definition_en, definition_zh: def.definition_zh,
+            pronunciation: (def as { pronunciation?: string }).pronunciation,
+            examples: def.examples,
+            source_type: sourceType, tags: [],
+            native_alternatives: alts.length ? alts : undefined,
+            tv_examples: tvEx.length ? tvEx : undefined,
+          });
+        }
         saved++;
-      } catch { /* skip */ }
+      } catch { /* skip failed entries */ }
     }
     setSavedCount(n => n + saved);
-    setCandidates([]); setExtractedText(null); setTextInput(""); setInputState("idle");
+    setCandidates([]); setExtractedText(null); setTextInput("");
+    setPastedImage(null); setPastedImageBlob(null);
+    setInputState("idle");
     setIsAnalyzing(false);
   };
 
@@ -388,20 +417,37 @@ export default function AddPage() {
               )}
             </div>
 
-            {/* Drop hint */}
+            {/* Drop hint + mobile upload button */}
             {!textInput && !pastedImage && (
-              <div className="flex items-center gap-6 text-outline/50 text-xs pt-2 border-t border-white/5">
-                <span className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm">drag_pan</span> Drag file here
+              <div className="flex items-center gap-4 text-outline/50 text-xs pt-2 border-t border-white/5">
+                <span className="hidden sm:flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">drag_pan</span> Drag file
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm">content_paste</span> Ctrl+V screenshot
+                <span className="hidden sm:flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">content_paste</span> Ctrl+V
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-sm">keyboard_return</span> Enter to analyze
                 </span>
+                {/* Camera / Gallery button — primary CTA on mobile */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 transition-colors text-xs font-semibold"
+                >
+                  <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>photo_camera</span>
+                  Photo / Camera
+                </button>
               </div>
             )}
+            {/* Hidden file input — works on desktop & mobile */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,text/*,.pdf"
+              className="hidden"
+              onChange={handleFileInput}
+            />
 
             {/* Action row */}
             <div className="flex gap-3 pt-2">
@@ -412,17 +458,19 @@ export default function AddPage() {
               )}
               <button
                 onClick={handleAnalyze}
-                disabled={(!textInput.trim() && !pastedImage) || isAnalyzing || !!sentenceAnalysis}
+                disabled={(!textInput.trim() && !pastedImage) || isAnalyzing || !!sentenceAnalysis || (!!pastedImage && candidates.length > 0)}
                 className="flex-1 bg-gradient-to-br from-[#4F46E5] to-[#6001D1] text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-all hover:shadow-[0_0_20px_rgba(79,70,229,0.4)]"
               >
                 {isAnalyzing ? (
-                  <><span className="material-symbols-outlined animate-spin text-sm">sync</span> Analyzing...</>
-                ) : pastedImage ? (
-                  <><span className="material-symbols-outlined text-sm">auto_awesome</span> Extract from Image</>
+                  pastedImage
+                    ? <><span className="material-symbols-outlined animate-spin text-sm">image_search</span> Scanning image...</>
+                    : <><span className="material-symbols-outlined animate-spin text-sm">sync</span> Analyzing...</>
+                ) : pastedImage && candidates.length > 0 ? (
+                  <><span className="material-symbols-outlined text-sm">check_circle</span> Extracted — select below</>
                 ) : (extractedText || (textInput.split(/\s+/).length > 10)) ? (
                   <><span className="material-symbols-outlined text-sm">auto_awesome</span> Extract Vocabulary</>
                 ) : (
-                  <><span className="material-symbols-outlined text-sm">auto_awesome</span> Analyze & Add</>
+                  <><span className="material-symbols-outlined text-sm">auto_awesome</span> Analyze &amp; Add</>
                 )}
               </button>
             </div>
