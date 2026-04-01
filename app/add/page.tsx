@@ -108,8 +108,8 @@ export default function AddPage() {
     setInputState("preview");
 
     // Auto-analyze immediately — no need to click a button
-    const key = getSettings().gemini_key;
-    if (!key) return; // will show the Settings reminder
+    const key = getSettings().gemini_key || process.env.NEXT_PUBLIC_GEMINI_KEY;
+    if (!key) return;
 
     setIsAnalyzing(true);
     try {
@@ -201,7 +201,7 @@ export default function AddPage() {
     const hasImage = !!pastedImageBlob;
     if (!text && !hasImage || isAnalyzing) return;
 
-    const key = settings.gemini_key || getSettings().gemini_key;
+    const key = settings.gemini_key || getSettings().gemini_key || process.env.NEXT_PUBLIC_GEMINI_KEY;
     if (!key) {
       alert("Please add your Gemini API key in Settings first.");
       return;
@@ -283,7 +283,7 @@ export default function AddPage() {
     if (!selected.length) return;
     setIsAnalyzing(true);
     let saved = 0;
-    const key = settings.gemini_key || getSettings().gemini_key;
+    const key = settings.gemini_key || getSettings().gemini_key || process.env.NEXT_PUBLIC_GEMINI_KEY;
     const sourceType = pastedImage ? "screenshot" : extractedText ? "paste" : "manual";
     for (const c of selected) {
       try {
@@ -594,17 +594,7 @@ export default function AddPage() {
           </div>
         )}
 
-        {/* Settings reminder */}
-        {!settings.gemini_key && (
-          <div className="glass-card rounded-xl p-4 flex items-center gap-3">
-            <span className="material-symbols-outlined text-amber-400">warning</span>
-            <p className="text-sm text-amber-400/80 flex-1">
-              Add your Gemini API key in{" "}
-              <Link href="/settings" className="underline font-bold">Settings</Link>{" "}
-              to enable AI analysis.
-            </p>
-          </div>
-        )}
+
 
       </main>
       <BottomNav />

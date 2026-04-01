@@ -48,7 +48,7 @@ function getKey(): string {
       }
     } catch { /* ignore */ }
   }
-  return "";
+  return process.env.NEXT_PUBLIC_GEMINI_KEY || "";
 }
 
 // ─── Audio cache (text+voice → base64 PCM) ────────────────────────────────

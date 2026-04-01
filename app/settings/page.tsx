@@ -8,7 +8,6 @@ import { getSettings, saveSettings, getAllEntries, AppSettings, DEFAULT_SETTINGS
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
-  const [keyVisible, setKeyVisible] = useState(false);
   const [syncConnected, setSyncConnected] = useState<boolean | null>(null);
 
   const handleExport = () => {
@@ -65,30 +64,16 @@ export default function SettingsPage() {
           <p className="text-on-surface-variant mt-1">Configure your learning experience</p>
         </div>
 
-        {/* API Keys */}
+        {/* AI Engine Status */}
         <section className="glass-card rounded-lg p-6 space-y-5">
-          <h3 className="text-sm font-bold uppercase tracking-widest text-primary">API Keys</h3>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-on-surface-variant">Gemini API Key</label>
-            <p className="text-xs text-outline">Used for definitions, native alternatives, and smart word extraction</p>
-            <div className="relative">
-              <input
-                type={keyVisible ? "text" : "password"}
-                value={settings.gemini_key || ""}
-                onChange={(e) => update({ gemini_key: e.target.value })}
-                placeholder="AIza..."
-                className="w-full glass-card rounded-xl px-4 py-3 text-on-surface placeholder:text-outline bg-transparent outline-none focus:ring-2 focus:ring-primary/50 pr-12"
-              />
-              <button
-                onClick={() => setKeyVisible(!keyVisible)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">
-                  {keyVisible ? "visibility_off" : "visibility"}
-                </span>
-              </button>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-primary">AI Engine</h3>
+          <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold text-sm text-emerald-400">Gemini API Connected</p>
+              <p className="text-xs text-outline mt-0.5">Definitions, native alternatives, image analysis, and TTS are all powered by Gemini</p>
             </div>
+            <span className="material-symbols-outlined text-emerald-400 text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
           </div>
         </section>
 

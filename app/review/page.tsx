@@ -173,7 +173,7 @@ export default function ReviewPage() {
   // ── Voice answer for sentences ──────────────────────────────────────────────
   const handleVoiceJudge = async () => {
     if (!transcript.trim() || !current) return;
-    const key = getSettings().gemini_key;
+    const key = getSettings().gemini_key || process.env.NEXT_PUBLIC_GEMINI_KEY;
     if (!key) {
       // Fallback: just accept it
       setJudgeResult({ correct: true, feedback: "No Gemini key — auto-accepted!" });
