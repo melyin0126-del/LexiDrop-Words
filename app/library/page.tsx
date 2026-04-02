@@ -372,7 +372,13 @@ export default function LibraryPage() {
                         {entry.wordbook}
                       </span>
                     )}
-                    <h2 className="text-xl font-bold text-on-surface font-outfit">{entry.content}</h2>
+                    <h2 className={`text-on-surface font-outfit ${
+                      entry.type === "word"
+                        ? "text-xl font-bold"
+                        : entry.type === "phrase"
+                        ? "text-base font-semibold"
+                        : "text-sm font-medium leading-relaxed"
+                    }`}>{entry.content}</h2>
                     {entry.pronunciation && (
                       <span className="text-xs text-outline font-mono">{entry.pronunciation}</span>
                     )}
