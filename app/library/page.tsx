@@ -360,52 +360,82 @@ export default function LibraryPage() {
             const daysUntil = Math.max(0, Math.ceil((entry.next_review_at - Date.now()) / 86400000));
             return (
               <div key={entry.id} className="glass-card rounded-lg p-6 space-y-3 hover:bg-white/[0.08] transition-all">
-                {/* Top row */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase ${badgeColor[entry.type]}`}>
-                      {entry.type}
-                    </span>
-                    {entry.wordbook && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <span className="material-symbols-outlined" style={{ fontSize: "10px", fontVariationSettings: "'FILL' 1" }}>menu_book</span>
-                        {entry.wordbook}
+                {/* Top row — layout differs by type */}
+                {entry.type === "sentence" ? (
+                  <>
+                    {/* Row 1: badge + action buttons */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase ${badgeColor[entry.type]}`}>
+                          {entry.type}
+                        </span>
+                        {entry.wordbook && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                            <span className="material-symbols-outlined" style={{ fontSize: "10px", fontVariationSettings: "'FILL' 1" }}>menu_book</span>
+                            {entry.wordbook}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-outline">
+                          {daysUntil === 0 ? "due now" : `in ${daysUntil}d`}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => handleSpeak(entry)}
+                          className={`transition-colors ${playingId === entry.id ? "text-indigo-400 animate-pulse" : "text-on-surface-variant hover:text-primary"}`}>
+                          <span className="material-symbols-outlined text-sm">
+                            {playingId === entry.id ? "graphic_eq" : "volume_up"}
+                          </span>
+                        </button>
+                        <button onClick={() => setExpanded(isExpanded ? null : entry.id)} className="text-on-surface-variant hover:text-on-surface transition-colors">
+                          <span className="material-symbols-outlined text-sm">{isExpanded ? "expand_less" : "expand_more"}</span>
+                        </button>
+                        <button onClick={() => handleDelete(entry.id)} className="text-outline hover:text-error transition-colors">
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                      </div>
+                    </div>
+                    {/* Row 2: full-width sentence text (same style as example sentences) */}
+                    <p className="text-on-surface text-sm font-medium leading-relaxed">{entry.content}</p>
+                  </>
+                ) : (
+                  /* Word / Phrase: badge + content inline */
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase ${badgeColor[entry.type]}`}>
+                        {entry.type}
                       </span>
-                    )}
-                    <h2 className={`text-on-surface font-outfit ${
-                      entry.type === "word"
-                        ? "text-xl font-bold"
-                        : entry.type === "phrase"
-                        ? "text-base font-semibold"
-                        : "text-sm font-medium leading-relaxed"
-                    }`}>{entry.content}</h2>
-                    {entry.pronunciation && (
-                      <span className="text-xs text-outline font-mono">{entry.pronunciation}</span>
-                    )}
+                      {entry.wordbook && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                          <span className="material-symbols-outlined" style={{ fontSize: "10px", fontVariationSettings: "'FILL' 1" }}>menu_book</span>
+                          {entry.wordbook}
+                        </span>
+                      )}
+                      <h2 className={`text-on-surface font-outfit ${
+                        entry.type === "word" ? "text-xl font-bold" : "text-base font-semibold"
+                      }`}>{entry.content}</h2>
+                      {entry.pronunciation && (
+                        <span className="text-xs text-outline font-mono">{entry.pronunciation}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] text-outline">
+                        {daysUntil === 0 ? "due now" : `in ${daysUntil}d`}
+                      </span>
+                      <button onClick={() => handleSpeak(entry)}
+                        className={`transition-colors ${playingId === entry.id ? "text-indigo-400 animate-pulse" : "text-on-surface-variant hover:text-primary"}`}>
+                        <span className="material-symbols-outlined text-sm">
+                          {playingId === entry.id ? "graphic_eq" : "volume_up"}
+                        </span>
+                      </button>
+                      <button onClick={() => setExpanded(isExpanded ? null : entry.id)} className="text-on-surface-variant hover:text-on-surface transition-colors">
+                        <span className="material-symbols-outlined text-sm">{isExpanded ? "expand_less" : "expand_more"}</span>
+                      </button>
+                      <button onClick={() => handleDelete(entry.id)} className="text-outline hover:text-error transition-colors">
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[10px] text-outline">
-                      {daysUntil === 0 ? "due now" : `in ${daysUntil}d`}
-                    </span>
-                    <button onClick={() => handleSpeak(entry)}
-                      className={`transition-colors ${playingId === entry.id ? "text-indigo-400 animate-pulse" : "text-on-surface-variant hover:text-primary"}`}>
-                      <span className="material-symbols-outlined text-sm">
-                        {playingId === entry.id ? "graphic_eq" : "volume_up"}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setExpanded(isExpanded ? null : entry.id)}
-                      className="text-on-surface-variant hover:text-on-surface transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        {isExpanded ? "expand_less" : "expand_more"}
-                      </span>
-                    </button>
-                    <button onClick={() => handleDelete(entry.id)} className="text-outline hover:text-error transition-colors">
-                      <span className="material-symbols-outlined text-sm">delete</span>
-                    </button>
-                  </div>
-                </div>
+                )}
 
                 {/* Definition */}
                 <p className="text-on-surface-variant">
