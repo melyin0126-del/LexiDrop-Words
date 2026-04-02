@@ -451,24 +451,23 @@ export default function LibraryPage() {
                         {entry.examples.map((ex, i) => {
                           const exId = `ex-${i}-${entry.id}`;
                           return (
-                            <div key={i} className="group">
-                              <div className="flex items-start gap-2">
-                                <p className="text-on-surface-variant text-sm italic flex-1">&ldquo;{ex}&rdquo;</p>
-                                {/* Action buttons — show on hover */}
-                                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-                                  <ZhBtn text={ex} id={exId} />
-                                  <button
-                                    onClick={() => handleSpeakText(ex, exId)}
-                                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                                      playingId === exId ? "bg-indigo-500/40" : "bg-indigo-500/20 hover:bg-indigo-500/40"
-                                    }`}
-                                  >
-                                    <span className="material-symbols-outlined text-indigo-400" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}>
-                                      {playingId === exId ? "graphic_eq" : "play_arrow"}
-                                    </span>
-                                  </button>
-                                  <AddBtn text={ex} id={exId} type="sentence" />
-                                </div>
+                            <div key={i}>
+                              {/* 句子文本 — 独占一整行 */}
+                              <p className="text-on-surface-variant text-sm italic leading-relaxed">&ldquo;{ex}&rdquo;</p>
+                              {/* 操作按钮行 — 永远显示，在文本下方 */}
+                              <div className="flex gap-1 mt-1.5 items-center">
+                                <ZhBtn text={ex} id={exId} />
+                                <button
+                                  onClick={() => handleSpeakText(ex, exId)}
+                                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                                    playingId === exId ? "bg-indigo-500/40" : "bg-indigo-500/20 hover:bg-indigo-500/40"
+                                  }`}
+                                >
+                                  <span className="material-symbols-outlined text-indigo-400" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}>
+                                    {playingId === exId ? "graphic_eq" : "play_arrow"}
+                                  </span>
+                                </button>
+                                <AddBtn text={ex} id={exId} type="sentence" />
                               </div>
                               {/* Chinese translation (below sentence) */}
                               {translations[exId] && translations[exId] !== "__hidden__" && (
@@ -490,28 +489,27 @@ export default function LibraryPage() {
                         {entry.tv_examples.map((tv, i) => {
                           const tvId = `tv-${i}-${entry.id}`;
                           return (
-                            <div key={i} className="glass-card rounded-xl p-3 space-y-1.5 group">
-                              <div className="flex items-start gap-2">
-                                <p className="text-on-surface text-sm italic flex-1">&ldquo;{tv.line}&rdquo;</p>
-                                {/* Action buttons */}
-                                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-                                  <ZhBtn text={tv.line} id={tvId} />
-                                  <button
-                                    onClick={() => handleSpeakText(tv.line, tvId)}
-                                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                                      playingId === tvId ? "bg-amber-500/40" : "bg-amber-500/20 hover:bg-amber-500/40"
-                                    }`}
-                                  >
-                                    <span className="material-symbols-outlined text-amber-400" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}>
-                                      {playingId === tvId ? "graphic_eq" : "play_arrow"}
-                                    </span>
-                                  </button>
-                                  <AddBtn text={tv.line} id={tvId} type="sentence" />
-                                </div>
+                            <div key={i} className="glass-card rounded-xl p-3 space-y-1.5">
+                              {/* 台词文本 — 独占整行 */}
+                              <p className="text-on-surface text-sm italic leading-relaxed">&ldquo;{tv.line}&rdquo;</p>
+                              {/* 操作按钮行 */}
+                              <div className="flex gap-1 items-center">
+                                <ZhBtn text={tv.line} id={tvId} />
+                                <button
+                                  onClick={() => handleSpeakText(tv.line, tvId)}
+                                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                                    playingId === tvId ? "bg-amber-500/40" : "bg-amber-500/20 hover:bg-amber-500/40"
+                                  }`}
+                                >
+                                  <span className="material-symbols-outlined text-amber-400" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}>
+                                    {playingId === tvId ? "graphic_eq" : "play_arrow"}
+                                  </span>
+                                </button>
+                                <AddBtn text={tv.line} id={tvId} type="sentence" />
                               </div>
-                              {/* Chinese translation */}
+                              {/* 中文翻译 */}
                               {translations[tvId] && translations[tvId] !== "__hidden__" && (
-                                <p className="text-amber-300/70 text-xs italic pl-1">🇨🇳 {translations[tvId]}</p>
+                                <p className="text-amber-300/70 text-xs italic">🇨🇳 {translations[tvId]}</p>
                               )}
                               <p className="text-outline text-[10px]">
                                 {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
