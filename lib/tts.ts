@@ -123,6 +123,12 @@ async function playPCMBase64(
   for (let i = 0; i < samples; i++) float32[i] = int16[i] / 32768;
 
   const ctx    = getAudioCtx();
+
+  // iOS: AudioContext starts suspended — must resume before any playback
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch { /* ignore */ }
+  }
+
   const buf    = ctx.createBuffer(1, samples, 24000); // 24kHz, mono
   buf.getChannelData(0).set(float32);
 
@@ -205,6 +211,20 @@ export async function speak(text: string, opts: SpeakOptions = {}): Promise<void
     onEnd,
     onError,
   } = opts;
+
+  // ── iOS critical fix: resume AudioContext IMMEDIATELY inside user gesture ──
+  // AudioContext on iOS starts "suspended". If we await a network call first,
+  // we lose the user-gesture context and iOS blocks audio forever.
+  // We must create + resume it synchronously here, before any await.
+  if (typeof AudioContext !== "undefined" || typeof (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext !== "undefined") {
+    if (!_audioCtx || _audioCtx.state === "closed") {
+      const AC = (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext ?? AudioContext;
+      _audioCtx = new AC();
+    }
+    if (_audioCtx.state === "suspended") {
+      _audioCtx.resume().catch(() => {/* ignore */});
+    }
+  }
 
   // Try Gemini TTS first (natural AI voice)
   if (lang.startsWith("en-US") || lang.startsWith("en-GB") || lang.startsWith("en-AU")) {
