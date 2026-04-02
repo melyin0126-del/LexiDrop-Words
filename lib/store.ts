@@ -62,6 +62,7 @@ export interface AppSettings {
 
 const ENTRIES_KEY  = "lexidrop_entries";
 const SETTINGS_KEY = "lexidrop_settings";
+const DELETED_KEY  = "lexidrop_deleted_ids"; // tombstone: IDs deleted locally
 
 // ─── Default Settings ──────────────────────────────────────────────────────
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -164,6 +165,25 @@ function lsSaveAll(entries: VocabEntry[]) {
   localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries));
 }
 
+// ─── Tombstone helpers (deleted IDs that must survive Supabase sync) ────────
+function tsGet(): Set<string> {
+  if (!isBrowser()) return new Set();
+  try {
+    const s = localStorage.getItem(DELETED_KEY);
+    return new Set(s ? JSON.parse(s) : []);
+  } catch { return new Set(); }
+}
+
+function tsAdd(id: string) {
+  const ids = tsGet(); ids.add(id);
+  localStorage.setItem(DELETED_KEY, JSON.stringify(Array.from(ids)));
+}
+
+function tsRemove(id: string) {
+  const ids = tsGet(); ids.delete(id);
+  localStorage.setItem(DELETED_KEY, JSON.stringify(Array.from(ids)));
+}
+
 // --- Supabase layer (async, synced) ---
 export async function syncFromSupabase(): Promise<VocabEntry[] | null> {
   const sb = await getSupabase();
@@ -174,7 +194,11 @@ export async function syncFromSupabase(): Promise<VocabEntry[] | null> {
       .select("*")
       .order("created_at", { ascending: false });
     if (error || !data) return null;
-    const entries = data.map(rowToEntry);
+    // Filter out locally-deleted entries (in case Supabase DELETE failed / RLS)
+    const tombstone = tsGet();
+    const entries = data
+      .filter(row => !tombstone.has(row.id))
+      .map(rowToEntry);
     lsSaveAll(entries); // keep cache in sync
     return entries;
   } catch { return null; }
@@ -271,15 +295,23 @@ export async function updateEntry(id: string, updates: Partial<VocabEntry>) {
 }
 
 export async function deleteEntry(id: string) {
-  // Local
+  // Add to tombstone FIRST so even if Supabase sync runs before deletion completes,
+  // the entry will be filtered out and never reappear
+  tsAdd(id);
+
+  // Remove from localStorage
   const entries = lsGetAll().filter((e) => e.id !== id);
   lsSaveAll(entries);
 
-  // Supabase
+  // Supabase (best-effort — tombstone handles the case where this fails)
   const sb = await getSupabase();
   if (sb) {
     const { error } = await sb.from("vocab_entries").delete().eq("id", id);
-    if (error) console.error("[LexiDrop] Supabase delete error:", error.message);
+    if (!error) {
+      tsRemove(id); // successfully deleted from Supabase, no longer need tombstone
+    } else {
+      console.warn("[LexiDrop] Supabase delete failed (will stay filtered):", error.message);
+    }
   }
 }
 
