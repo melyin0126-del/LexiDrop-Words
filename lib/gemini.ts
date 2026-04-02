@@ -290,6 +290,14 @@ Respond ONLY with valid JSON. No markdown.
   }
 }
 
+// ─── Translate English text to Chinese ────────────────────────────────────
+// Quick single-shot translation — returns only the Chinese text, nothing else
+export async function translateToZh(text: string): Promise<string> {
+  const prompt = `Translate the following English text to simplified Chinese. Return ONLY the Chinese translation, no explanation, no punctuation changes, no markdown.\n\nText: "${text}"`;
+  const raw = await callGemini(prompt, 400);
+  return raw.trim();
+}
+
 // ─── Judge sentence answer (semantic match) ────────────────────────────────
 // Returns { correct, feedback } — accepts synonyms and native alternatives
 export async function callGeminiJudge(

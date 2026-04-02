@@ -4,9 +4,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import TopBar from "@/components/TopBar";
 import BottomNav from "@/components/BottomNav";
-import { getAllEntries, getAllEntriesAsync, deleteEntry, seedDemoData, getSettings, DEFAULT_SETTINGS, VocabEntry } from "@/lib/store";
+import {
+  getAllEntries, getAllEntriesAsync, deleteEntry, seedDemoData,
+  getSettings, DEFAULT_SETTINGS, VocabEntry, addEntry,
+} from "@/lib/store";
 import { speak, ACCENT_MAP } from "@/lib/tts";
 import { ThemeToggle } from "@/components/ThemeProvider";
+import { translateToZh, analyzeSentence, getDefinition, getNativeAlternatives, getTVExamples } from "@/lib/gemini";
 
 type FilterType = "All" | "Words" | "Phrases" | "Sentences";
 
@@ -21,13 +25,21 @@ export default function LibraryPage() {
   const [playingId, setPlayingId]     = useState<string | null>(null);
   const [wordbookFilter, setWordbookFilter] = useState<string>("All");
 
+  // ── 中文翻译状态 ──────────────────────────────────────────────────────────
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set());
+
+  // ── 快速添加状态 ──────────────────────────────────────────────────────────
+  const [addingIds, setAddingIds]       = useState<Set<string>>(new Set());
+  const [addedIds, setAddedIds]         = useState<Set<string>>(new Set());
+  const [quickAddToast, setQuickAddToast] = useState<string | null>(null);
+
   useEffect(() => {
-    seedDemoData(); // fire-and-forget
+    seedDemoData();
     const s = getSettings();
     setSettingsState(s);
-    setEntries(getAllEntries()); // instant from localStorage
+    setEntries(getAllEntries());
     setLangMode(s.lang_display);
-    // Then sync from Supabase in background
     getAllEntriesAsync().then((fresh) => setEntries(fresh));
   }, []);
 
@@ -37,8 +49,8 @@ export default function LibraryPage() {
   };
 
   const handleDelete = (id: string) => {
-    void deleteEntry(id); // async fire-and-forget
-    setEntries(prev => prev.filter(e => e.id !== id)); // instant local update
+    void deleteEntry(id);
+    setEntries(prev => prev.filter(e => e.id !== id));
     setJustDeleted(id);
     setTimeout(() => setJustDeleted(null), 2000);
   };
@@ -68,6 +80,141 @@ export default function LibraryPage() {
     });
   };
 
+  // ── 中文翻译 (按需加载) ───────────────────────────────────────────────────
+  const handleTranslate = async (text: string, id: string) => {
+    if (translations[id] !== undefined) {
+      // 已有译文 → 切换显示/隐藏
+      setTranslations(prev => {
+        const next = { ...prev };
+        if (next[id] === "__hidden__") {
+          next[id] = next[`${id}__cache`] || "";
+        } else {
+          next[`${id}__cache`] = next[id];
+          next[id] = "__hidden__";
+        }
+        return next;
+      });
+      return;
+    }
+    if (translatingIds.has(id)) return;
+    setTranslatingIds(prev => new Set([...prev, id]));
+    try {
+      const zh = await translateToZh(text);
+      setTranslations(prev => ({ ...prev, [id]: zh }));
+    } catch {
+      setTranslations(prev => ({ ...prev, [id]: "翻译失败，请重试" }));
+    } finally {
+      setTranslatingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
+
+  // ── 快速添加 (句子 / 短语 / 单词) ────────────────────────────────────────
+  const handleQuickAdd = async (text: string, id: string, type?: "word" | "phrase" | "sentence") => {
+    if (addingIds.has(id) || addedIds.has(id)) return;
+
+    // 自动判断类型
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    const autoType: "word" | "phrase" | "sentence" = type
+      ?? (/[.!?]$/.test(text.trim()) || words.length > 6 ? "sentence"
+        : words.length === 1 ? "word" : "phrase");
+
+    setAddingIds(prev => new Set([...prev, id]));
+    try {
+      if (autoType === "sentence") {
+        const analysis = await analyzeSentence(text);
+        const tvEx = await getTVExamples(text, "sentence");
+        await addEntry({
+          type: "sentence",
+          content: text,
+          definition_en: analysis.explanation,
+          definition_zh: analysis.definition_zh,
+          examples: analysis.situations.flatMap(s => s.examples).slice(0, 3),
+          source_type: "manual",
+          tags: ["from-library"],
+          native_alternatives: analysis.native_alternatives,
+          situations: analysis.situations,
+          sentence_explanation: analysis.explanation,
+          tv_examples: tvEx.length ? tvEx : undefined,
+        });
+      } else {
+        const [def, alts, tvEx] = await Promise.all([
+          getDefinition(text, autoType),
+          autoType === "phrase" ? getNativeAlternatives(text, "phrase") : Promise.resolve([]),
+          getTVExamples(text, autoType),
+        ]);
+        await addEntry({
+          type: autoType,
+          content: text,
+          definition_en: def.definition_en,
+          definition_zh: def.definition_zh,
+          pronunciation: def.pronunciation,
+          examples: def.examples,
+          source_type: "manual",
+          tags: ["from-library"],
+          native_alternatives: alts.length ? alts : undefined,
+          tv_examples: tvEx.length ? tvEx : undefined,
+        });
+      }
+      setAddedIds(prev => new Set([...prev, id]));
+      setQuickAddToast(`✓ "${text.length > 30 ? text.slice(0, 30) + "…" : text}" added!`);
+      setTimeout(() => setQuickAddToast(null), 3000);
+      refresh();
+    } catch (e) {
+      console.error("Quick add failed:", e);
+    } finally {
+      setAddingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
+
+  // ── 翻译按钮 UI ──────────────────────────────────────────────────────────
+  const ZhBtn = ({ text, id }: { text: string; id: string }) => {
+    const isLoading = translatingIds.has(id);
+    const hasZh = translations[id] && translations[id] !== "__hidden__";
+    return (
+      <button
+        onClick={() => handleTranslate(text, id)}
+        disabled={isLoading}
+        title="查看中文翻译"
+        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 text-[10px] font-bold ${
+          hasZh
+            ? "bg-indigo-500/40 text-indigo-300"
+            : "bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400"
+        }`}
+      >
+        {isLoading
+          ? <span className="material-symbols-outlined animate-spin" style={{ fontSize: "11px" }}>sync</span>
+          : "中"
+        }
+      </button>
+    );
+  };
+
+  // ── 快速添加按钮 UI ───────────────────────────────────────────────────────
+  const AddBtn = ({ text, id, type }: { text: string; id: string; type?: "word" | "phrase" | "sentence" }) => {
+    const isLoading = addingIds.has(id);
+    const isDone    = addedIds.has(id);
+    return (
+      <button
+        onClick={() => handleQuickAdd(text, id, type)}
+        disabled={isLoading || isDone}
+        title="添加到词库"
+        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+          isDone
+            ? "bg-emerald-500/40 text-emerald-300"
+            : "bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400"
+        }`}
+      >
+        {isLoading ? (
+          <span className="material-symbols-outlined animate-spin" style={{ fontSize: "13px" }}>sync</span>
+        ) : isDone ? (
+          <span className="material-symbols-outlined" style={{ fontSize: "13px" }}>check</span>
+        ) : (
+          <span className="material-symbols-outlined" style={{ fontSize: "15px" }}>add</span>
+        )}
+      </button>
+    );
+  };
+
   const wordbooks = ["All", ...Array.from(new Set(entries.map(e => e.wordbook).filter(Boolean))) as string[]];
 
   const filtered = entries.filter((e) => {
@@ -92,13 +239,20 @@ export default function LibraryPage() {
 
   return (
     <div className="min-h-screen pb-32 bg-background">
-      {/* Deleted toast */}
+      {/* Toast — deleted */}
       {justDeleted && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white text-sm font-bold px-5 py-2.5 rounded-full shadow-lg animate-pulse">
           🗑 Deleted
         </div>
       )}
-      {/* Header with lang toggle */}
+      {/* Toast — quick added */}
+      {quickAddToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-emerald-500/90 text-white text-sm font-bold px-5 py-2.5 rounded-full shadow-lg whitespace-nowrap max-w-[90vw] truncate">
+          {quickAddToast}
+        </div>
+      )}
+
+      {/* Header */}
       <header className="bg-[#131317] sticky top-0 z-40">
         <div className="flex justify-between items-center w-full px-6 py-4 max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
@@ -122,7 +276,7 @@ export default function LibraryPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-6 mt-4 space-y-8">
-        {/* Stats bar */}
+        {/* Stats */}
         <div className="flex gap-3 text-sm">
           <span className="glass-card px-3 py-1.5 rounded-full text-on-surface-variant">
             <strong className="text-on-surface">{entries.length}</strong> total
@@ -214,7 +368,7 @@ export default function LibraryPage() {
                     </span>
                     {entry.wordbook && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20 flex items-center gap-1">
-                        <span className="material-symbols-outlined" style={{ fontSize: '10px', fontVariationSettings: "'FILL' 1" }}>menu_book</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: "10px", fontVariationSettings: "'FILL' 1" }}>menu_book</span>
                         {entry.wordbook}
                       </span>
                     )}
@@ -256,16 +410,32 @@ export default function LibraryPage() {
                 {entry.native_alternatives && entry.native_alternatives.length > 0 && (
                   <div className="native-glass rounded-xl p-4 flex items-start gap-3">
                     <span className="material-symbols-outlined text-tertiary text-lg shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm font-semibold text-tertiary mb-1">Native expressions</p>
-                      <div className="space-y-1">
-                        {entry.native_alternatives.map((alt) => (
-                          <p key={alt.text} className="text-on-surface-variant text-sm">
-                            &quot;{alt.text}&quot;
-                            <span className="text-outline text-xs ml-2">· {alt.register}</span>
-                            {alt.note && <span className="text-outline text-xs ml-1">— {alt.note}</span>}
-                          </p>
-                        ))}
+                      <div className="space-y-2">
+                        {entry.native_alternatives.map((alt, i) => {
+                          const altId = `alt-${i}-${entry.id}`;
+                          return (
+                            <div key={i} className="group">
+                              <div className="flex items-center gap-2">
+                                <p className="text-on-surface-variant text-sm flex-1">
+                                  &quot;{alt.text}&quot;
+                                  <span className="text-outline text-xs ml-2">· {alt.register}</span>
+                                  {alt.note && <span className="text-outline text-xs ml-1">— {alt.note}</span>}
+                                </p>
+                                {/* Actions: translate + add */}
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <ZhBtn text={alt.text} id={altId} />
+                                  <AddBtn text={alt.text} id={altId} />
+                                </div>
+                              </div>
+                              {/* Chinese translation */}
+                              {translations[altId] && translations[altId] !== "__hidden__" && (
+                                <p className="text-indigo-300/80 text-xs mt-0.5 pl-1">🇨🇳 {translations[altId]}</p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -274,30 +444,43 @@ export default function LibraryPage() {
                 {/* Expanded: examples + TV */}
                 {isExpanded && (
                   <div className="space-y-4 mt-1">
+
+                    {/* Example Sentences */}
                     {entry.examples.length > 0 && (
-                      <div className="pl-4 border-l-2 border-indigo-500/20 space-y-2">
+                      <div className="pl-4 border-l-2 border-indigo-500/20 space-y-3">
                         {entry.examples.map((ex, i) => {
                           const exId = `ex-${i}-${entry.id}`;
                           return (
-                            <div key={i} className="flex items-center gap-2 group">
-                              <p className="text-on-surface-variant text-sm italic flex-1">&ldquo;{ex}&rdquo;</p>
-                              <button
-                                onClick={() => handleSpeakText(ex, exId)}
-                                className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 active:scale-90 ${
-                                  playingId === exId
-                                    ? "opacity-100 bg-indigo-500/40"
-                                    : "bg-indigo-500/20 hover:bg-indigo-500/40"
-                                }`}
-                              >
-                                <span className="material-symbols-outlined text-indigo-400" style={{ fontSize: '14px', fontVariationSettings: "'FILL' 1" }}>
-                                  {playingId === exId ? "graphic_eq" : "play_arrow"}
-                                </span>
-                              </button>
+                            <div key={i} className="group">
+                              <div className="flex items-start gap-2">
+                                <p className="text-on-surface-variant text-sm italic flex-1">&ldquo;{ex}&rdquo;</p>
+                                {/* Action buttons — show on hover */}
+                                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+                                  <ZhBtn text={ex} id={exId} />
+                                  <button
+                                    onClick={() => handleSpeakText(ex, exId)}
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                                      playingId === exId ? "bg-indigo-500/40" : "bg-indigo-500/20 hover:bg-indigo-500/40"
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-indigo-400" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}>
+                                      {playingId === exId ? "graphic_eq" : "play_arrow"}
+                                    </span>
+                                  </button>
+                                  <AddBtn text={ex} id={exId} type="sentence" />
+                                </div>
+                              </div>
+                              {/* Chinese translation (below sentence) */}
+                              {translations[exId] && translations[exId] !== "__hidden__" && (
+                                <p className="text-indigo-300/80 text-xs mt-0.5 italic pl-1">🇨🇳 {translations[exId]}</p>
+                              )}
                             </div>
                           );
                         })}
                       </div>
                     )}
+
+                    {/* TV Examples */}
                     {entry.tv_examples && entry.tv_examples.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
@@ -307,30 +490,39 @@ export default function LibraryPage() {
                         {entry.tv_examples.map((tv, i) => {
                           const tvId = `tv-${i}-${entry.id}`;
                           return (
-                          <div key={i} className="glass-card rounded-xl p-3 space-y-1">
-                            <div className="flex items-end gap-2">
-                              <p className="text-on-surface text-sm italic flex-1">&ldquo;{tv.line}&rdquo;</p>
-                              <button
-                                onClick={() => handleSpeakText(tv.line, tvId)}
-                                className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-90 mb-0.5 ${
-                                  playingId === tvId
-                                    ? "bg-amber-500/40"
-                                    : "bg-amber-500/20 hover:bg-amber-500/40"
-                                }`}
-                              >
-                                <span className="material-symbols-outlined text-amber-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
-                                  {playingId === tvId ? "graphic_eq" : "play_arrow"}
-                                </span>
-                              </button>
+                            <div key={i} className="glass-card rounded-xl p-3 space-y-1.5 group">
+                              <div className="flex items-start gap-2">
+                                <p className="text-on-surface text-sm italic flex-1">&ldquo;{tv.line}&rdquo;</p>
+                                {/* Action buttons */}
+                                <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+                                  <ZhBtn text={tv.line} id={tvId} />
+                                  <button
+                                    onClick={() => handleSpeakText(tv.line, tvId)}
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                                      playingId === tvId ? "bg-amber-500/40" : "bg-amber-500/20 hover:bg-amber-500/40"
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-amber-400" style={{ fontSize: "14px", fontVariationSettings: "'FILL' 1" }}>
+                                      {playingId === tvId ? "graphic_eq" : "play_arrow"}
+                                    </span>
+                                  </button>
+                                  <AddBtn text={tv.line} id={tvId} type="sentence" />
+                                </div>
+                              </div>
+                              {/* Chinese translation */}
+                              {translations[tvId] && translations[tvId] !== "__hidden__" && (
+                                <p className="text-amber-300/70 text-xs italic pl-1">🇨🇳 {translations[tvId]}</p>
+                              )}
+                              <p className="text-outline text-[10px]">
+                                {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
+                                {tv.character && " · "}
+                                <span>{tv.show}</span>
+                                {tv.context && <span className="ml-1">· {tv.context}</span>}
+                              </p>
                             </div>
-                            <p className="text-outline text-[10px]">
-                              {tv.character && <span className="text-amber-400/70">{tv.character}</span>}
-                              {tv.character && " · "}
-                              <span>{tv.show}</span>
-                              {tv.context && <span className="ml-1">· {tv.context}</span>}
-                            </p>
-                          </div>
-                        )})}                      </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}
