@@ -362,7 +362,7 @@ export default function LibraryPage() {
               <div key={entry.id} className="glass-card rounded-lg p-6 space-y-3 hover:bg-white/[0.08] transition-all">
                 {/* Top row */}
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest uppercase ${badgeColor[entry.type]}`}>
                       {entry.type}
                     </span>
